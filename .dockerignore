@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+.gitignore
+README.md # If you don't need it in the Docker image, otherwise remove
+.pytest_cache/
+.coverage/
+.env
+.DS_Store
+*.log
+.vscode/
+.idea/

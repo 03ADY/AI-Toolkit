@@ -1,0 +1,38 @@
+# Core API Framework
+fastapi==0.104.1
+uvicorn==0.24.0
+python-multipart==0.0.6
+
+# AI/ML Core
+transformers==4.36.0
+torch==2.1.0
+torchvision==0.16.0
+torchaudio==2.1.0
+sentencepiece
+sacremoses==0.1.1
+
+# Audio Processing
+soundfile==0.12.1
+librosa==0.10.1
+pydub==0.25.1
+audioread==3.0.1
+scipy==1.11.4
+
+# Image Processing
+Pillow==10.0.1
+
+# Frontend & Visualization
+streamlit==1.28.2
+pandas==2.1.4
+plotly==5.17.0
+
+# Utilities
+numpy==1.24.3
+
+# Optional Performance Improvements
+# accelerate==0.25.0
+# psutil==5.9.6
+
+datasets
+torch
+librosa
