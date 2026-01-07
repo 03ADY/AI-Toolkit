@@ -1142,7 +1142,7 @@ st.markdown("---")
 st.markdown(
     """
     <div style="text-align: center; color: gray;">
-        <p>AI Services Toolkit Pro v1.4.1 | Developed by Adarsh Divase</p>
+        <p>AI Services Toolkit Pro v1.4.1 | Developed by Aayush Yadav</p>
     </div>
     """,
     unsafe_allow_html=True
