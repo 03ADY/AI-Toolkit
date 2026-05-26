@@ -909,36 +909,39 @@ st.markdown(
 # Sidebar Navigation
 st.sidebar.title("🚀 Navigation")
 render_demo_sidebar()
-st.sidebar.markdown('<div class="sidebar-card">Choose an AI service or utility:</div>', unsafe_allow_html=True)
+NAV_PAGES = [
+    ("Home", "🏠"),
+    ("Sentiment Analysis", "🎭"),
+    ("Text Summarization", "📄"),
+    ("Creative Text Generation", "✍️"),
+    ("Image Captioning", "🖼️"),
+    ("Language Translation", "🌍"),
+    ("Text to Speech", "🔊"),
+    ("Speech to Text", "🎤"),
+    ("AI Chatbot", "💬"),
+    ("Question Answering", "❓"),
+    ("Demo Runner", "🎬"),
+    ("Document Analyzer", "📑"),
+    ("Service Compare", "⚖️"),
+    ("Batch Lab", "📦"),
+    ("API Playground", "🧪"),
+    ("Session Report", "📑"),
+    ("Integrations Hub", "🔗"),
+    ("Cost Center", "💰"),
+    ("API Call History", "📜"),
+    ("My Favorites", "⭐"),
+    ("User Preferences", "⚙️"),
+    ("System Dashboard", "🚀"),
+]
+_nav_icons = dict(NAV_PAGES)
 
-menu_options = {
-    "Home": "🏠",
-    "Sentiment Analysis": "🎭",
-    "Text Summarization": "📄",
-    "Creative Text Generation": "✍️",
-    "Image Captioning": "🖼️",
-    "Language Translation": "🌍",
-    "Text to Speech": "🔊",
-    "Speech to Text": "🎤",
-    "AI Chatbot": "💬",
-    "Question Answering": "❓",
-    "---": "---",
-    "Demo Runner": "🎬",
-    "Batch Lab": "📦",
-    "API Playground": "🧪",
-    "Session Report": "📑",
-    "API Call History": "📜",
-    "My Favorites": "⭐",
-    "User Preferences": "⚙️",
-    "System Dashboard": "🚀",
-}
-
-# Add a selectbox for navigation, or use buttons/radio for more direct navigation
+st.sidebar.caption("Choose a page")
 selected_option = st.sidebar.radio(
-    "Select a service:",
-    options=list(menu_options.keys()),
-    format_func=lambda x: f"{menu_options[x]} {x}" if x != "---" else "---",
-    key="main_menu_selector"
+    "Navigation",
+    options=[name for name, _ in NAV_PAGES],
+    format_func=lambda x: f"{_nav_icons[x]} {x}",
+    key="main_menu_selector",
+    label_visibility="collapsed",
 )
 
 # Content Display based on selection

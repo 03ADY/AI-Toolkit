@@ -23,6 +23,8 @@ MENU_TO_SAMPLE = {
     "Language Translation": "translation",
     "AI Chatbot": "chatbot",
     "Question Answering": "qa",
+    "Document Analyzer": "summarization",
+    "Service Compare": "sentiment",
 }
 
 
