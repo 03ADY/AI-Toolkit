@@ -38,7 +38,10 @@ def render_demo_sidebar() -> dict:
     st.markdown("### 🎬 Demo")
     present = st.toggle("Present mode", value=st.session_state.get("present_mode", True))
     st.session_state.present_mode = present
-    api = API_BASE
+
+    api_base = API_BASE
+    loaded = False
+    offline = bool(st.session_state.get("offline_demo", False))
 
     if use_builtin_runtime():
         st.session_state.builtin_mode = True
@@ -50,20 +53,20 @@ def render_demo_sidebar() -> dict:
     else:
         offline = st.toggle(
             "Offline demo mode (mocks)",
-            value=st.session_state.get("offline_demo", False),
+            value=offline,
             help="Use static mocks without starting the FastAPI backend.",
         )
         st.session_state.offline_demo = offline
         st.session_state.builtin_mode = False
 
         with st.expander("Advanced: external FastAPI API"):
-            api = st.text_input(
+            api_base = st.text_input(
                 "API base",
                 API_BASE,
                 help="Only if you run merged_backend.py separately (local Docker, Render, etc.)",
             )
-            if api != API_BASE:
-                os.environ["AI_TOOLKIT_API_BASE"] = api
+            if api_base != API_BASE:
+                os.environ["AI_TOOLKIT_API_BASE"] = api_base
                 st.caption("Restart app if URL changed mid-session.")
 
         if offline:
@@ -111,7 +114,7 @@ def render_demo_sidebar() -> dict:
         st.session_state[f"demo_fill_{sk}"] = get_sample(sk)
         st.rerun()
 
-    return {"present": present, "api": api, "loaded": loaded}
+    return {"present": present, "api": api_base, "loaded": loaded, "offline": offline}
 
 
 def render_enterprise_home():
