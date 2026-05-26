@@ -13,6 +13,7 @@ from toolkit.cloud import is_streamlit_cloud, use_builtin_runtime
 from toolkit.config import API_BASE, API_ROOT, APP_NAME, SERVICES
 from toolkit.cost import estimate_session_cost
 from toolkit.scenarios import DEMO_SAMPLES, MENU_TO_SAMPLE, get_sample
+from toolkit.theme_ui import inject_theme
 
 
 def _service_health_grid(models: dict, loaded: bool):
@@ -35,6 +36,7 @@ def _service_health_grid(models: dict, loaded: bool):
 
 
 def render_demo_sidebar() -> dict:
+    inject_theme()
     st.markdown("### 🎬 Demo")
     present = st.toggle("Present mode", value=st.session_state.get("present_mode", True))
     st.session_state.present_mode = present

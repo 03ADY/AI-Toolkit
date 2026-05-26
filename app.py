@@ -37,6 +37,7 @@ from toolkit.extras import (
     render_session_report,
 )
 from toolkit.helpers import call_api
+from toolkit.theme_ui import hero_html, inject_theme
 
 st.set_page_config(
     page_title=APP_NAME,
@@ -44,161 +45,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-# --- Custom CSS for better styling ---
-st.markdown("""
-<style>
-    .main-header {
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        padding: 1rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    
-    .feature-card {
-        background: #f8f9fa;
-        padding: 1.5rem;
-        border-radius: 10px;
-        border-left: 4px solid #667eea;
-        margin: 1rem 0;
-        color: #333333;
-    }
-    
-    .metric-card {
-        background: linear-gradient(45deg, #667eea, #764ba2);
-        color: white;
-        padding: 1rem;
-        border-radius: 10px;
-        text-align: center;
-    }
-    
-    .success-message {
-        background: #d4edda;
-        color: #155724;
-        padding: 1rem;
-        border-radius: 5px;
-        border: 1px solid #c3e6cb;
-    }
-    
-    .error-message {
-        background: #f8d7da;
-        color: #721c24;
-        padding: 1rem;
-        border-radius: 5px;
-        border: 1px solid #f5c6cb;
-    }
-    
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 2px;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        background-color: #f0f2f6;
-        border-radius: 10px 10px 0 0;
-        color: #262730;
-        font-weight: 500;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background-color: #667eea;
-        color: white;
-    }
-    
-    .upload-section {
-        border: 2px dashed #667eea;
-        border-radius: 10px;
-        padding: 2rem;
-        text-align: center;
-        background: #f8f9ff;
-    }
-    
-    .stats-container {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 1rem 0;
-    }
-    
-    .sidebar-card {
-        background: #f8f9fa;
-        padding: 1rem;
-        border-radius: 8px;
-        border: 1px solid #e9ecef;
-        margin-bottom: 1rem;
-    }
-
-    /* Fixed content display boxes with better contrast */
-    .content-display {
-        background: #ffffff;
-        color: #333333;
-        padding: 1.5rem;
-        border-radius: 10px;
-        border: 2px solid #667eea;
-        margin: 1rem 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    .original-text {
-        background: #fff3cd;
-        color: #856404;
-        padding: 1rem;
-        border-radius: 10px;
-        border-left: 4px solid #ffc107;
-        margin: 0.5rem 0;
-    }
-    
-    .translated-text {
-        background: #d1ecf1;
-        color: #0c5460;
-        padding: 1rem;
-        border-radius: 10px;
-        border-left: 4px solid #17a2b8;
-        margin: 0.5rem 0;
-    }
-    
-    .generated-content {
-        background: #f8f9fa;
-        color: #495057;
-        padding: 1.5rem;
-        border-radius: 10px;
-        border: 1px solid #dee2e6;
-        margin: 1rem 0;
-        line-height: 1.6;
-    }
-    
-    .transcription-result {
-        background: #e7f3ff;
-        color: #004085;
-        padding: 1.5rem;
-        border-radius: 10px;
-        border-left: 4px solid #007bff;
-        margin: 1rem 0;
-    }
-
-    /* Sentiment analysis specific styling */
-    .sentiment-positive {
-        background: #d4edda;
-        color: #155724;
-        padding: 1rem;
-        border-radius: 10px;
-        text-align: center;
-        border: 2px solid #28a745;
-    }
-    
-    .sentiment-negative {
-        background: #f8d7da;
-        color: #721c24;
-        padding: 1rem;
-        border-radius: 10px;
-        text-align: center;
-        border: 2px solid #dc3545;
-    }
-</style>
-""", unsafe_allow_html=True)
+inject_theme()
 
 # --- Session State Initialization ---
 # Initialize all session state variables to ensure persistence across reruns
@@ -1051,12 +898,13 @@ def system_dashboard_component():
 # --- Main Application Layout ---
 
 # Header Section
-st.markdown(f"""
-<div class="main-header">
-    <h1>{APP_NAME} 🤖</h1>
-    <p>Built-in NLP on Streamlit Cloud · Optional FastAPI gateway for local full models</p>
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    hero_html(
+        f"{APP_NAME} 🤖",
+        "Built-in NLP on Streamlit Cloud · Optional FastAPI gateway for local full models",
+    ),
+    unsafe_allow_html=True,
+)
 
 # Sidebar Navigation
 st.sidebar.title("🚀 Navigation")
