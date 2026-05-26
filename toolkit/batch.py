@@ -3,6 +3,7 @@
 import pandas as pd
 import requests
 
+from toolkit.builtin import invoke, should_use_builtin
 from toolkit.config import API_BASE
 from toolkit.fallback import mock_response
 
@@ -12,6 +13,18 @@ def batch_sentiment(texts: list[str], *, offline: bool = False) -> pd.DataFrame:
     for i, text in enumerate(texts):
         text = text.strip()
         if not text:
+            continue
+        if should_use_builtin():
+            t0 = __import__("time").perf_counter()
+            r = invoke("sentiment", {"text": text})
+            ms = (__import__("time").perf_counter() - t0) * 1000
+            rows.append({
+                "row": i + 1,
+                "text": text[:80],
+                "label": r["label"],
+                "score": r["score"],
+                "latency_ms": round(ms, 1),
+            })
             continue
         if offline:
             r = mock_response("sentiment")

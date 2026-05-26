@@ -61,7 +61,19 @@ def list_models(timeout: int = 5) -> dict:
 
 
 def run_demo_call(service_id: str, timeout: int = 60) -> tuple[bool, Any, str | None]:
+    from toolkit.builtin import invoke, should_use_builtin
     from toolkit.scenarios import DEMO_SAMPLES
+
+    if should_use_builtin():
+        try:
+            payload = {}
+            if service_id == "qa":
+                payload = DEMO_SAMPLES["qa"]
+            elif service_id in DEMO_SAMPLES and isinstance(DEMO_SAMPLES[service_id], str):
+                payload = {"text": DEMO_SAMPLES[service_id]}
+            return True, invoke(service_id, payload), None
+        except Exception as exc:
+            return False, None, str(exc)
 
     svc = next((s for s in SERVICES if s["id"] == service_id), None)
     if not svc:

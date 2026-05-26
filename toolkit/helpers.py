@@ -1,14 +1,14 @@
-"""Unified API helper: offline, timing, optional history logging."""
+"""Unified API helper: built-in (Streamlit), offline mocks, or external FastAPI."""
 
 import time
 from typing import Any, Callable
 
 import requests
 
+from toolkit.builtin import invoke, should_use_builtin
 from toolkit.config import API_BASE
 from toolkit.fallback import mock_response
 
-# Map endpoint path fragment -> fallback service id
 _ENDPOINT_FALLBACK = {
     "/sentiment/analyze": "sentiment",
     "/summarization/summarize": "summarization",
@@ -27,10 +27,22 @@ def call_api(
     offline: bool = False,
     timeout: int = 90,
     method: str = "POST",
+    file_bytes: bytes | None = None,
 ) -> tuple[bool, Any, str | None, float]:
     fid = next((v for k, v in _ENDPOINT_FALLBACK.items() if k in endpoint), None)
+
+    if fid and should_use_builtin():
+        try:
+            t0 = time.perf_counter()
+            data = invoke(fid, payload, file_bytes=file_bytes)
+            ms = (time.perf_counter() - t0) * 1000
+            return True, data, None, ms
+        except Exception as exc:
+            return False, None, str(exc), 0.0
+
     if offline and fid:
         return True, mock_response(fid, payload), None, 0.0
+
     try:
         t0 = time.perf_counter()
         if method.upper() == "POST":

@@ -16,10 +16,13 @@ from PIL import Image
 import numpy as np
 
 # --- Configuration ---
-from toolkit.cloud import is_streamlit_cloud
+from toolkit.cloud import is_streamlit_cloud, use_builtin_runtime
 from toolkit.config import API_BASE, APP_NAME
 
-if "offline_demo" not in st.session_state and is_streamlit_cloud():
+if use_builtin_runtime():
+    st.session_state.builtin_mode = True
+    st.session_state.offline_demo = True
+elif "offline_demo" not in st.session_state and is_streamlit_cloud():
     st.session_state.offline_demo = True
 from toolkit.api_client import check_status as _check_status
 from toolkit.ui import render_demo_sidebar, render_enterprise_home, render_enterprise_dashboard
@@ -290,19 +293,14 @@ def sentiment_analysis_component():
 
         with st.spinner("Analyzing sentiment..."):
             try:
-                if st.session_state.get("offline_demo"):
-                    result = __import__("toolkit.fallback", fromlist=["mock_response"]).mock_response("sentiment")
-                    latency_ms = 0
-                else:
-                    t0 = time.perf_counter()
-                    response = requests.post(
-                        f"{API_BASE}/sentiment/analyze",
-                        json={"text": text_input},
-                        timeout=30,
-                    )
-                    latency_ms = (time.perf_counter() - t0) * 1000
-                    response.raise_for_status()
-                    result = response.json()
+                ok, result, err, latency_ms = call_api(
+                    "/sentiment/analyze",
+                    {"text": text_input},
+                    offline=st.session_state.get("offline_demo", False),
+                    timeout=30,
+                )
+                if not ok:
+                    raise requests.exceptions.RequestException(err)
                 
                 st.subheader("📊 Analysis Results")
                 
@@ -445,14 +443,14 @@ def text_generation_component():
 
         with st.spinner("Generating creative content..."):
             try:
-                # Call FastAPI backend for text generation
-                response = requests.post(
-                    f"{API_BASE}/generation/generate", 
-                    json={"text": text_input},
-                    timeout=60
+                ok, result, err, latency_ms = call_api(
+                    "/generation/generate",
+                    {"text": text_input},
+                    offline=st.session_state.get("offline_demo", False),
+                    timeout=60,
                 )
-                response.raise_for_status()
-                result = response.json()
+                if not ok:
+                    raise requests.exceptions.RequestException(err)
                 generated_text = result.get("generated_text", "No text generated.")
                 
                 st.subheader("📖 Generated Content")
@@ -488,7 +486,7 @@ def text_generation_component():
                         })
                         st.success("Saved to favorites!")
                 
-                log_to_history("Text Generation", text_input, generated_text)
+                log_to_history("Text Generation", text_input, generated_text, latency_ms=latency_ms)
                 
             except requests.exceptions.RequestException as e:
                 display_error(f"Could not generate text: {e}")
@@ -548,11 +546,21 @@ def image_captioning_component():
         if st.button("🔍 Analyze Image", type="primary", use_container_width=True):
             with st.spinner("Analyzing image with AI..."):
                 try:
-                    # Call FastAPI backend for image captioning
-                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                    response = requests.post(f"{API_BASE}/image/caption", files=files, timeout=60)
-                    response.raise_for_status()
-                    result = response.json()
+                    from toolkit.builtin import should_use_builtin
+
+                    if should_use_builtin():
+                        t0 = time.perf_counter()
+                        from toolkit.builtin import invoke
+
+                        result = invoke("caption", {}, file_bytes=uploaded_file.getvalue())
+                        latency_ms = (time.perf_counter() - t0) * 1000
+                    else:
+                        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                        t0 = time.perf_counter()
+                        response = requests.post(f"{API_BASE}/image/caption", files=files, timeout=60)
+                        latency_ms = (time.perf_counter() - t0) * 1000
+                        response.raise_for_status()
+                        result = response.json()
                     caption = result.get("generated_text", "No caption generated.")
                     
                     st.subheader("🔍 Analysis Results")
@@ -581,7 +589,7 @@ Caption: {caption}
                             })
                             st.success("Saved to favorites!")
                     
-                    log_to_history("Image Analysis", uploaded_file.name, caption)
+                    log_to_history("Image Analysis", uploaded_file.name, caption, latency_ms=latency_ms)
                     
                 except requests.exceptions.RequestException as e:
                     display_error(f"Could not analyze image: {e}")
@@ -609,14 +617,14 @@ def translation_component():
 
         with st.spinner("Translating text..."):
             try:
-                # Call FastAPI backend for translation
-                response = requests.post(
-                    f"{API_BASE}/translation/translate", 
-                    json={"text": text_input},
-                    timeout=30
+                ok, result, err, latency_ms = call_api(
+                    "/translation/translate",
+                    {"text": text_input},
+                    offline=st.session_state.get("offline_demo", False),
+                    timeout=30,
                 )
-                response.raise_for_status()
-                result = response.json()
+                if not ok:
+                    raise requests.exceptions.RequestException(err)
                 translated_text = result.get("translated_text", "Translation failed.")
                 
                 st.session_state.translation_history.append({
@@ -661,7 +669,7 @@ def translation_component():
                         })
                         st.success("Saved to favorites!")
                 
-                log_to_history("Language Translation", "English → French", translated_text)
+                log_to_history("Language Translation", "English → French", translated_text, latency_ms=latency_ms)
                 
             except requests.exceptions.RequestException as e:
                 display_error(f"Could not translate text: {e}")
@@ -696,11 +704,19 @@ def speech_to_text_component():
 
         with st.spinner("Converting speech to text..."):
             try:
-                # Call FastAPI backend for STT
-                files = {"file": (uploaded_audio.name, uploaded_audio.getvalue(), uploaded_audio.type)}
-                response = requests.post(f"{API_BASE}/stt", files=files, timeout=120)
-                response.raise_for_status()
-                result = response.json()
+                from toolkit.builtin import invoke, should_use_builtin
+
+                if should_use_builtin():
+                    t0 = time.perf_counter()
+                    result = invoke("stt", {}, file_bytes=uploaded_audio.getvalue())
+                    latency_ms = (time.perf_counter() - t0) * 1000
+                else:
+                    files = {"file": (uploaded_audio.name, uploaded_audio.getvalue(), uploaded_audio.type)}
+                    t0 = time.perf_counter()
+                    response = requests.post(f"{API_BASE}/stt", files=files, timeout=120)
+                    latency_ms = (time.perf_counter() - t0) * 1000
+                    response.raise_for_status()
+                    result = response.json()
                 transcription = result.get("transcribed_text", "Could not transcribe audio.")
                 
                 word_count = len(transcription.split())
@@ -729,7 +745,7 @@ def speech_to_text_component():
                         })
                         st.success("Saved to favorites!")
                 
-                log_to_history("Speech to Text", uploaded_audio.name, transcription)
+                log_to_history("Speech to Text", uploaded_audio.name, transcription, latency_ms=latency_ms)
                 
             except requests.exceptions.RequestException as e:
                 display_error(f"Could not transcribe audio: {e}")
@@ -761,28 +777,41 @@ def text_to_speech_component():
 
         with st.spinner("Generating speech..."):
             try:
-                # Call FastAPI backend for TTS
-                response = requests.post(
-                    f"{API_BASE}/tts", 
-                    json={"text": text_input},
-                    timeout=60
-                )
-                response.raise_for_status()
+                from toolkit.builtin import invoke, should_use_builtin
 
-                # Check if response is JSON (error) or audio content
-                content_type = response.headers.get('content-type', '')
-                if 'application/json' in content_type:
-                    error_data = response.json()
-                    raise Exception(f"TTS API Error: {error_data.get('detail', 'Unknown error')}")
-                
-                audio_bytes = response.content
-                
-                if len(audio_bytes) == 0:
+                if should_use_builtin():
+                    t0 = time.perf_counter()
+                    audio_bytes = invoke("tts", {"text": text_input})
+                    latency_ms = (time.perf_counter() - t0) * 1000
+                elif st.session_state.get("offline_demo"):
+                    st.info("Offline demo: TTS returns mock metadata only (no audio file).")
+                    audio_bytes = b""
+                    latency_ms = 0
+                else:
+                    response = requests.post(
+                        f"{API_BASE}/tts",
+                        json={"text": text_input},
+                        timeout=60,
+                    )
+                    response.raise_for_status()
+                    content_type = response.headers.get("content-type", "")
+                    if "application/json" in content_type:
+                        error_data = response.json()
+                        raise Exception(f"TTS API Error: {error_data.get('detail', 'Unknown error')}")
+                    audio_bytes = response.content
+                    latency_ms = 0
+                if not should_use_builtin() and not st.session_state.get("offline_demo") and len(audio_bytes) == 0:
                     raise Exception("No audio content received from the server")
                 
                 st.subheader("🎵 Generated Audio")
-                st.audio(audio_bytes, format='audio/wav')
-                display_success("Speech generated successfully!")
+                if audio_bytes:
+                    st.audio(audio_bytes, format="audio/wav")
+                    display_success("Speech generated successfully!")
+                else:
+                    st.markdown(
+                        f'<div class="content-display">Mock TTS for: <em>{text_input[:200]}</em></div>',
+                        unsafe_allow_html=True,
+                    )
                 
                 st.subheader("📊 Audio Information")
                 col1, col2 = st.columns(2)
@@ -794,13 +823,14 @@ def text_to_speech_component():
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.download_button(
-                        label="📥 Download Audio",
-                        data=audio_bytes,
-                        file_name="generated_speech.wav",
-                        mime="audio/wav",
-                        use_container_width=True
-                    )
+                    if audio_bytes:
+                        st.download_button(
+                            label="📥 Download Audio",
+                            data=audio_bytes,
+                            file_name="generated_speech.wav",
+                            mime="audio/wav",
+                            use_container_width=True,
+                        )
                 with col2:
                     if st.button("⭐ Save to Favorites", key="save_tts_result"):
                         add_to_favorites("Text to Speech", {
@@ -836,15 +866,14 @@ def chatbot_component():
         with st.chat_message("assistant"):
             with st.spinner("AI is thinking..."):
                 try:
-                    # For a real chatbot, you'd call a dedicated chatbot API
-                    # For now, it leverages the text generation model
-                    response = requests.post(
-                        f"{API_BASE}/generation/generate",
-                        json={"text": prompt},
-                        timeout=90
+                    ok, result, err, _ = call_api(
+                        "/generation/generate",
+                        {"text": prompt},
+                        offline=st.session_state.get("offline_demo", False),
+                        timeout=90,
                     )
-                    response.raise_for_status()
-                    result = response.json()
+                    if not ok:
+                        raise requests.exceptions.RequestException(err)
                     ai_response = result.get("generated_text", "I'm sorry, I couldn't generate a response.")
                     
                     # Basic trimming to avoid prompt repetition in simple models
@@ -901,13 +930,14 @@ def Youtubeing_component(): # Renamed from Youtubeing_component
 
         with st.spinner("Finding answer..."):
             try:
-                response = requests.post(
-                    f"{API_BASE}/qa/answer",
-                    json={"question": question, "context": context},
-                    timeout=45
+                ok, result, err, latency_ms = call_api(
+                    "/qa/answer",
+                    {"question": question, "context": context},
+                    offline=st.session_state.get("offline_demo", False),
+                    timeout=45,
                 )
-                response.raise_for_status()
-                result = response.json()
+                if not ok:
+                    raise requests.exceptions.RequestException(err)
 
                 st.subheader("✅ Answer")
                 st.markdown(f'<div class="content-display"><h3>{result.get("answer", "No answer found.")}</h3></div>', unsafe_allow_html=True)
@@ -928,7 +958,7 @@ def Youtubeing_component(): # Renamed from Youtubeing_component
                     })
                     st.success("Saved to favorites!")
 
-                log_to_history("Question Answering", question, result.get("answer", "N/A"))
+                log_to_history("Question Answering", question, result.get("answer", "N/A"), latency_ms=latency_ms)
 
             except requests.exceptions.RequestException as e:
                 display_error(f"Error getting answer: {e}")
@@ -1024,7 +1054,7 @@ def system_dashboard_component():
 st.markdown(f"""
 <div class="main-header">
     <h1>{APP_NAME} 🤖</h1>
-    <p>Self-hosted NLP · Speech · Vision · Unified API gateway</p>
+    <p>Built-in NLP on Streamlit Cloud · Optional FastAPI gateway for local full models</p>
 </div>
 """, unsafe_allow_html=True)
 

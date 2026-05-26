@@ -1,6 +1,8 @@
 # AI Toolkit Enterprise — Demo
 
-**Streamlit Cloud:** turn on **Offline demo mode** in the sidebar (no local API on cloud). For full models, run `start-demo.ps1` locally or deploy `merged_backend.py` to Render/Railway and set the API URL in the sidebar.
+**Streamlit Cloud:** runs **built-in AI** inside the app — no API URL, no `127.0.0.1`, no separate server. Open any service from the sidebar and click the action button.
+
+For **full Hugging Face models** (heavier), run `start-demo.ps1` locally or deploy `merged_backend.py` and use **Advanced: external FastAPI API** in the sidebar (local only).
 
 
 ```powershell

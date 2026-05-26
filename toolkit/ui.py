@@ -8,7 +8,8 @@ import streamlit as st
 
 from toolkit.analytics import history_to_usage, success_rate, timeline
 from toolkit.api_client import check_health, check_status, get_metrics, list_models, run_demo_call
-from toolkit.cloud import is_streamlit_cloud
+from toolkit.builtin import should_use_builtin
+from toolkit.cloud import is_streamlit_cloud, use_builtin_runtime
 from toolkit.config import API_BASE, API_ROOT, APP_NAME, SERVICES
 from toolkit.cost import estimate_session_cost
 from toolkit.scenarios import DEMO_SAMPLES, MENU_TO_SAMPLE, get_sample
@@ -37,32 +38,42 @@ def render_demo_sidebar() -> dict:
     st.markdown("### 🎬 Demo")
     present = st.toggle("Present mode", value=st.session_state.get("present_mode", True))
     st.session_state.present_mode = present
-    _cloud = is_streamlit_cloud()
-    if _cloud and "offline_demo" not in st.session_state:
+
+    if use_builtin_runtime():
+        st.session_state.builtin_mode = True
         st.session_state.offline_demo = True
-    offline = st.toggle(
-        "Offline demo mode",
-        value=st.session_state.get("offline_demo", _cloud),
-        help="Required on Streamlit Cloud unless you host the FastAPI backend elsewhere.",
-    )
-    st.session_state.offline_demo = offline
-    if _cloud and offline:
-        st.caption("Cloud: using offline mocks (127.0.0.1 API is not available here).")
-
-    api = st.text_input("API base", API_BASE, help="Include /api suffix; use your deployed API URL if not offline")
-    if api != API_BASE:
-        os.environ["AI_TOOLKIT_API_BASE"] = api
-        st.caption("Restart app if URL changed mid-session.")
-
-    if offline:
-        st.info("Offline mode — mock responses")
+        st.success("✅ Built-in AI — runs in this app")
+        st.caption("No API server or URL needed on Streamlit Cloud.")
         loaded = True
+        offline = True
     else:
-        loaded, err, _ = check_status()
-        if loaded:
-            st.success("Backend ready")
+        offline = st.toggle(
+            "Offline demo mode (mocks)",
+            value=st.session_state.get("offline_demo", False),
+            help="Use static mocks without starting the FastAPI backend.",
+        )
+        st.session_state.offline_demo = offline
+        st.session_state.builtin_mode = False
+
+        with st.expander("Advanced: external FastAPI API"):
+            api = st.text_input(
+                "API base",
+                API_BASE,
+                help="Only if you run merged_backend.py separately (local Docker, Render, etc.)",
+            )
+            if api != API_BASE:
+                os.environ["AI_TOOLKIT_API_BASE"] = api
+                st.caption("Restart app if URL changed mid-session.")
+
+        if offline:
+            st.info("Offline mocks — not real inference")
+            loaded = True
         else:
-            st.warning(err or "Loading models…")
+            loaded, err, _ = check_status()
+            if loaded:
+                st.success("Backend ready")
+            else:
+                st.warning(err or "Start API with scripts/start-demo.ps1 or enable offline mocks.")
 
     est = estimate_session_cost(st.session_state.get("history", []))
     st.caption(f"Session est. cost: ${est['total_usd']:.4f}")
@@ -70,7 +81,17 @@ def render_demo_sidebar() -> dict:
     with st.expander("⚡ Quick API test"):
         sid = st.selectbox("Service", [s["id"] for s in SERVICES], format_func=lambda x: next(s["name"] for s in SERVICES if s["id"] == x))
         if st.button("Run demo call", use_container_width=True):
-            if offline:
+            if should_use_builtin():
+                from toolkit.builtin import invoke
+                from toolkit.scenarios import DEMO_SAMPLES
+
+                if sid == "qa":
+                    data = invoke(sid, DEMO_SAMPLES["qa"])
+                else:
+                    data = invoke(sid, {"text": DEMO_SAMPLES.get(sid, "Hello")})
+                st.json(data)
+                st.session_state.last_demo_result = {"service": sid, "data": data}
+            elif offline:
                 from toolkit.fallback import mock_response
                 data = mock_response(sid)
                 st.json(data)
@@ -93,12 +114,23 @@ def render_demo_sidebar() -> dict:
 
 
 def render_enterprise_home():
-    offline = st.session_state.get("offline_demo", is_streamlit_cloud())
+    builtin = should_use_builtin()
+    offline = st.session_state.get("offline_demo", False) or builtin
     loaded, err, _ = check_status() if not offline else (True, None, {})
-    health = check_health() if not offline else {"status": "demo"}
-    models = list_models() if not offline else {"models": list(MOCK_PIPELINE_NAMES()), "loaded": True}
+    health = check_health() if not offline and not builtin else {"status": "builtin"}
+    models = list_models() if not offline and not builtin else {"models": list(MOCK_PIPELINE_NAMES()), "loaded": True}
 
     st.header("Welcome to AI Toolkit Enterprise")
+    if builtin:
+        st.success(
+            "**Built-in engine** — sentiment, summary, translation, Q&A, and more run **inside this Streamlit app**. "
+            "Open **Demo Runner** or any service from the sidebar and click the action button."
+        )
+    elif not loaded:
+        st.warning(
+            "Backend at `127.0.0.1:8000` is not reachable. Enable **Offline demo mode** in the sidebar, "
+            "or deploy `merged_backend.py` and set the API base URL."
+        )
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("API status", "Online" if loaded or offline else "Offline")
     c2.metric("Models", len(models.get("models", [])))
@@ -107,11 +139,11 @@ def render_enterprise_home():
     c4.metric("Session calls", st.session_state.get("api_calls_count", 0))
     c5.metric("Success rate", f"{success_rate(st.session_state.get('history', [])):.0f}%")
 
-    if not loaded and not offline:
-        st.error(err or "Backend unreachable — enable **Offline demo mode** in the sidebar (required on Streamlit Cloud).")
+    if not loaded and not offline and not builtin:
+        st.error(err or "Backend unreachable — enable **Offline demo mode** or run `scripts/start-demo.ps1`.")
 
     st.subheader("Service health")
-    _service_health_grid(models, loaded or offline)
+    _service_health_grid(models, loaded or offline or builtin)
 
     st.subheader("Quick launch")
     links = [
@@ -148,23 +180,25 @@ def MOCK_PIPELINE_NAMES():
 
 def render_enterprise_dashboard():
     st.header("🚀 System Dashboard")
+    builtin = should_use_builtin()
     offline = st.session_state.get("offline_demo", False)
-    loaded, err, _ = check_status() if not offline else (True, None, {})
-    health = check_health() if not offline else {"status": "ok"}
-    models = list_models() if not offline else {"models": MOCK_PIPELINE_NAMES()}
+    loaded, err, _ = check_status() if not offline and not builtin else (True, None, {})
+    health = check_health() if not offline and not builtin else {"status": "builtin"}
+    models = list_models() if not offline and not builtin else {"models": MOCK_PIPELINE_NAMES()}
 
     h1, h2, h3, h4 = st.columns(4)
     h1.metric("Health", health.get("status", "—"))
-    h2.metric("Models loaded", "Yes" if (loaded or offline) else "No")
+    h2.metric("Models loaded", "Yes" if (loaded or offline or builtin) else "No")
     h3.metric("API calls (session)", st.session_state.get("api_calls_count", 0))
     est = estimate_session_cost(st.session_state.get("history", []))
     h4.metric("Est. cost", f"${est['total_usd']:.4f}")
 
-    if not loaded and not offline:
+    if not loaded and not offline and not builtin:
         st.error(err or "Backend not ready")
         st.info(f"API `{API_ROOT}` · docs `/docs`")
     else:
-        st.success("All services operational" + (" (offline mocks)" if offline else ""))
+        label = "built-in engine" if builtin else ("offline mocks" if offline else "FastAPI backend")
+        st.success(f"All services operational ({label})")
 
     st.subheader("Pipeline registry")
     if models.get("models"):

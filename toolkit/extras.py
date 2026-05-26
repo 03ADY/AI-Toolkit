@@ -12,6 +12,7 @@ from toolkit.analytics import history_to_usage, success_rate, timeline
 from toolkit.api_client import check_status, get_metrics, post_with_timing, run_demo_call
 from toolkit.batch import batch_sentiment
 from toolkit.config import API_BASE, API_ROOT, APP_NAME, SERVICES
+from toolkit.builtin import invoke, should_use_builtin
 from toolkit.fallback import mock_response
 from toolkit.reports import session_report_html, session_report_markdown
 from toolkit.scenarios import DEMO_SAMPLES
@@ -25,6 +26,7 @@ def render_api_playground():
     st.caption("Send raw JSON to any toolkit endpoint.")
 
     offline = st.session_state.get("offline_demo", False)
+    builtin = should_use_builtin()
     svc = st.selectbox("Service", SERVICES, format_func=lambda s: f"{s['icon']} {s['name']}")
     method = st.radio("Method", ["POST"], horizontal=True)
     if svc["id"] == "qa":
@@ -46,6 +48,11 @@ def render_api_playground():
             payload = json.loads(body)
         except json.JSONDecodeError as exc:
             st.error(f"Invalid JSON: {exc}")
+            return
+        if builtin:
+            data = invoke(svc["id"], payload)
+            st.success("Built-in engine — ran in this app")
+            st.json(data)
             return
         if offline:
             data = mock_response(svc["id"], payload)
@@ -77,19 +84,80 @@ def render_batch_lab():
         st.download_button("Export CSV", df.to_csv(index=False).encode(), "batch_sentiment.csv")
 
 
+def _display_demo_suite_results(results: list[dict], *, offline: bool, builtin: bool):
+    """Show suite output prominently (Cloud demos often stop at the success banner)."""
+    if not results:
+        return
+    ok_n = sum(1 for r in results if r.get("status") in ("ok", "mock", "builtin"))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Services run", len(results))
+    c2.metric("Successful", ok_n)
+    c3.metric("Mode", "Built-in" if builtin else ("Offline mocks" if offline else "Live API"))
+
+    df = pd.DataFrame(results)
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    cols = st.columns(min(len(results), 4))
+    for col, row in zip(cols, results):
+        with col:
+            icon = "✅" if row.get("status") in ("ok", "mock", "builtin") else "❌"
+            st.markdown(f"**{icon} {row['service']}**")
+            st.caption(row.get("preview", "")[:80])
+
+    for row in results:
+        with st.expander(f"{row['service']} — full response"):
+            st.json(row.get("data") or row.get("preview"))
+
+    if "latency_ms" in df.columns and df["latency_ms"].sum() > 0:
+        st.plotly_chart(
+            px.bar(df, x="service", y="latency_ms", title="Latency by service"),
+            use_container_width=True,
+        )
+    elif offline:
+        st.caption("Offline mode uses instant mock responses (0 ms).")
+
+
 def render_demo_runner():
     st.header("🎬 Demo Runner")
     st.write("Runs a scripted tour across core NLP services.")
 
     offline = st.session_state.get("offline_demo", False)
+    builtin = should_use_builtin()
+    if builtin:
+        st.info("**Built-in engine** — all services run inside Streamlit (no API URL required).")
+    elif offline:
+        st.info("Offline mocks — enable built-in mode on Cloud or run `start-demo.ps1` locally for full models.")
+
     if st.button("▶️ Run full demo suite", type="primary"):
         results = []
         progress = st.progress(0)
         for i, sid in enumerate(DEMO_SUITE):
             progress.progress((i + 1) / len(DEMO_SUITE), text=f"Running {sid}…")
-            if offline:
+            if builtin:
+                t0 = time.perf_counter()
+                from toolkit.scenarios import DEMO_SAMPLES
+
+                if sid == "qa":
+                    data = invoke(sid, DEMO_SAMPLES["qa"])
+                else:
+                    data = invoke(sid, {"text": DEMO_SAMPLES.get(sid, "Hello")})
+                ms = (time.perf_counter() - t0) * 1000
+                results.append({
+                    "service": sid,
+                    "status": "builtin",
+                    "latency_ms": round(ms, 1),
+                    "preview": str(data)[:120],
+                    "data": data,
+                })
+            elif offline:
                 data = mock_response(sid)
-                results.append({"service": sid, "status": "mock", "latency_ms": 0, "preview": str(data)[:120]})
+                results.append({
+                    "service": sid,
+                    "status": "mock",
+                    "latency_ms": 0,
+                    "preview": str(data)[:120],
+                    "data": data,
+                })
             else:
                 t0 = time.perf_counter()
                 ok, data, err = run_demo_call(sid)
@@ -99,16 +167,20 @@ def render_demo_runner():
                     "status": "ok" if ok else "error",
                     "latency_ms": round(ms, 1),
                     "preview": str(data if ok else err)[:120],
+                    "data": data if ok else {"error": err},
                 })
         st.session_state.demo_suite_results = results
         progress.empty()
-        st.success("Demo suite complete.")
+        st.success("Demo suite complete — results below.")
+        _display_demo_suite_results(results, offline=offline, builtin=builtin)
 
-    if st.session_state.get("demo_suite_results"):
-        df = pd.DataFrame(st.session_state.demo_suite_results)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        if "latency_ms" in df.columns:
-            st.plotly_chart(px.bar(df, x="service", y="latency_ms", title="Latency by service"), use_container_width=True)
+    elif st.session_state.get("demo_suite_results"):
+        st.caption("Last run (re-run anytime with the button above).")
+        _display_demo_suite_results(
+            st.session_state.demo_suite_results,
+            offline=offline,
+            builtin=builtin,
+        )
 
 
 def render_session_report():
