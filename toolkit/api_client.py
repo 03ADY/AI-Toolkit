@@ -15,7 +15,7 @@ def check_status(timeout: int = 5) -> tuple[bool, str | None, dict]:
         data = r.json()
         return bool(data.get("models_loaded")), None, data
     except requests.exceptions.ConnectionError:
-        return False, "Backend unreachable — start with start-demo.ps1 or docker-compose.", {}
+        return False, "Backend unreachable — enable Offline demo mode (Streamlit Cloud) or deploy the FastAPI API.", {}
     except requests.exceptions.Timeout:
         return False, "Backend timeout — models may still be loading.", {}
     except requests.exceptions.RequestException as e:

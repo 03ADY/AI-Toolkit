@@ -8,6 +8,7 @@ import streamlit as st
 
 from toolkit.analytics import history_to_usage, success_rate, timeline
 from toolkit.api_client import check_health, check_status, get_metrics, list_models, run_demo_call
+from toolkit.cloud import is_streamlit_cloud
 from toolkit.config import API_BASE, API_ROOT, APP_NAME, SERVICES
 from toolkit.cost import estimate_session_cost
 from toolkit.scenarios import DEMO_SAMPLES, MENU_TO_SAMPLE, get_sample
@@ -36,10 +37,19 @@ def render_demo_sidebar() -> dict:
     st.markdown("### 🎬 Demo")
     present = st.toggle("Present mode", value=st.session_state.get("present_mode", True))
     st.session_state.present_mode = present
-    offline = st.toggle("Offline demo mode", value=st.session_state.get("offline_demo", False), help="Mock responses without backend")
+    _cloud = is_streamlit_cloud()
+    if _cloud and "offline_demo" not in st.session_state:
+        st.session_state.offline_demo = True
+    offline = st.toggle(
+        "Offline demo mode",
+        value=st.session_state.get("offline_demo", _cloud),
+        help="Required on Streamlit Cloud unless you host the FastAPI backend elsewhere.",
+    )
     st.session_state.offline_demo = offline
+    if _cloud and offline:
+        st.caption("Cloud: using offline mocks (127.0.0.1 API is not available here).")
 
-    api = st.text_input("API base", API_BASE, help="Include /api suffix")
+    api = st.text_input("API base", API_BASE, help="Include /api suffix; use your deployed API URL if not offline")
     if api != API_BASE:
         os.environ["AI_TOOLKIT_API_BASE"] = api
         st.caption("Restart app if URL changed mid-session.")
@@ -83,7 +93,7 @@ def render_demo_sidebar() -> dict:
 
 
 def render_enterprise_home():
-    offline = st.session_state.get("offline_demo", False)
+    offline = st.session_state.get("offline_demo", is_streamlit_cloud())
     loaded, err, _ = check_status() if not offline else (True, None, {})
     health = check_health() if not offline else {"status": "demo"}
     models = list_models() if not offline else {"models": list(MOCK_PIPELINE_NAMES()), "loaded": True}
@@ -98,7 +108,7 @@ def render_enterprise_home():
     c5.metric("Success rate", f"{success_rate(st.session_state.get('history', [])):.0f}%")
 
     if not loaded and not offline:
-        st.error(err or "Start backend: .\\scripts\\start-demo.ps1")
+        st.error(err or "Backend unreachable — enable **Offline demo mode** in the sidebar (required on Streamlit Cloud).")
 
     st.subheader("Service health")
     _service_health_grid(models, loaded or offline)

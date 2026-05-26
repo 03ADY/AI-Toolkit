@@ -1,5 +1,8 @@
 # AI Toolkit Enterprise — Demo
 
+**Streamlit Cloud:** turn on **Offline demo mode** in the sidebar (no local API on cloud). For full models, run `start-demo.ps1` locally or deploy `merged_backend.py` to Render/Railway and set the API URL in the sidebar.
+
+
 ```powershell
 .\scripts\start-demo.ps1
 ```

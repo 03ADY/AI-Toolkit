@@ -16,7 +16,11 @@ from PIL import Image
 import numpy as np
 
 # --- Configuration ---
+from toolkit.cloud import is_streamlit_cloud
 from toolkit.config import API_BASE, APP_NAME
+
+if "offline_demo" not in st.session_state and is_streamlit_cloud():
+    st.session_state.offline_demo = True
 from toolkit.api_client import check_status as _check_status
 from toolkit.ui import render_demo_sidebar, render_enterprise_home, render_enterprise_dashboard
 from toolkit.extras import (
