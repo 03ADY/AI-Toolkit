@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import requests
 import io
@@ -15,15 +16,26 @@ from PIL import Image
 import numpy as np
 
 # --- Configuration ---
-# IMPORTANT: For deployment, change this to your deployed FastAPI backend URL
-# Example: API_BASE = "https://your-backend-url.onrender.com/api"
-API_BASE = "https://adarshdivase-ai-toolkit-backend.hf.space/api"
+from toolkit.config import API_BASE, APP_NAME
+from toolkit.api_client import check_status as _check_status
+from toolkit.ui import render_demo_sidebar, render_enterprise_home, render_enterprise_dashboard
+from toolkit.extras import (
+    render_api_playground,
+    render_batch_lab,
+    render_cost_center,
+    render_demo_runner,
+    render_document_analyzer,
+    render_integrations_hub,
+    render_service_compare,
+    render_session_report,
+)
+from toolkit.helpers import call_api
 
 st.set_page_config(
-    page_title="AI Services Toolkit Pro",
+    page_title=APP_NAME,
     page_icon="🤖",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
 # --- Custom CSS for better styling ---
@@ -202,33 +214,27 @@ if 'translation_history' not in st.session_state:
     st.session_state.translation_history = []
 
 # --- Helper Functions ---
-@st.cache_data(ttl=3) # Cache backend status for 3 seconds to avoid excessive API calls
+@st.cache_data(ttl=3)
 def get_backend_status():
     """Checks the backend status by pinging the /status endpoint."""
-    try:
-        response = requests.get(f"{API_BASE}/status", timeout=5)
-        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-        data = response.json()
-        return data.get("models_loaded", False), None
-    except requests.exceptions.ConnectionError:
-        return False, "Connection Error: Backend server not running or unreachable."
-    except requests.exceptions.Timeout:
-        return False, "Timeout Error: Backend server took too long to respond."
-    except requests.exceptions.RequestException as e:
-        return False, f"An unexpected error occurred: {e}"
+    loaded, err, _ = _check_status()
+    return loaded, err
 
-def log_to_history(service: str, input_data: str, output_data: str, success: bool = True):
+def log_to_history(service: str, input_data: str, output_data: str, success: bool = True, latency_ms: float | None = None):
     """
     Logs API calls to the session history.
     Input and output are truncated for display in the history table.
     """
-    st.session_state.history.append({
+    entry = {
         'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         'service': service,
         'input': input_data[:100] + "..." if len(input_data) > 100 else input_data,
         'output': output_data[:100] + "..." if len(output_data) > 100 else output_data,
-        'success': success
-    })
+        'success': success,
+    }
+    if latency_ms is not None:
+        entry['latency_ms'] = round(latency_ms, 1)
+    st.session_state.history.append(entry)
     st.session_state.api_calls_count += 1
 
 def display_spinner_and_message(message):
@@ -264,11 +270,13 @@ def sentiment_analysis_component():
     st.header("🎭 Sentiment Analysis")
     st.write("Determine the emotional tone of text with advanced analytics.")
 
+    fill = st.session_state.pop("demo_fill_sentiment", "")
     text_input = st.text_area(
-        "Enter text to analyze sentiment:", 
-        height=150, 
+        "Enter text to analyze sentiment:",
+        value=fill,
+        height=150,
         placeholder="Enter your text here...",
-        help="Type or paste any text to analyze its emotional sentiment"
+        help="Type or paste any text to analyze its emotional sentiment",
     )
         
     if st.button("🔍 Analyze Sentiment", type="primary", use_container_width=True):
@@ -278,14 +286,19 @@ def sentiment_analysis_component():
 
         with st.spinner("Analyzing sentiment..."):
             try:
-                # Call FastAPI backend for sentiment analysis
-                response = requests.post(
-                    f"{API_BASE}/sentiment/analyze", 
-                    json={"text": text_input},
-                    timeout=30
-                )
-                response.raise_for_status()
-                result = response.json()
+                if st.session_state.get("offline_demo"):
+                    result = __import__("toolkit.fallback", fromlist=["mock_response"]).mock_response("sentiment")
+                    latency_ms = 0
+                else:
+                    t0 = time.perf_counter()
+                    response = requests.post(
+                        f"{API_BASE}/sentiment/analyze",
+                        json={"text": text_input},
+                        timeout=30,
+                    )
+                    latency_ms = (time.perf_counter() - t0) * 1000
+                    response.raise_for_status()
+                    result = response.json()
                 
                 st.subheader("📊 Analysis Results")
                 
@@ -326,7 +339,7 @@ def sentiment_analysis_component():
                         })
                         st.success("Saved to favorites!")
                 
-                log_to_history("Sentiment Analysis", text_input, str(result))
+                log_to_history("Sentiment Analysis", text_input, str(result), latency_ms=latency_ms)
                 
             except requests.exceptions.RequestException as e:
                 display_error(f"Could not analyze sentiment: {e}")
@@ -340,9 +353,11 @@ def text_summarization_component():
     st.header("📄 Text Summarization")
     st.write("Generate concise summaries of your text.")
 
+    fill = st.session_state.pop("demo_fill_summarization", "")
     text_input = st.text_area(
-        "Paste text to summarize:", 
-        height=300, 
+        "Paste text to summarize:",
+        value=fill,
+        height=300,
         placeholder="Paste your long text here...",
         help="Enter a longer text document to get a concise summary"
     )
@@ -354,14 +369,14 @@ def text_summarization_component():
 
         with st.spinner("Generating summary..."):
             try:
-                # Call FastAPI backend for summarization
-                response = requests.post(
-                    f"{API_BASE}/summarization/summarize", 
-                    json={"text": text_input},
-                    timeout=60
+                ok, result, err, latency_ms = call_api(
+                    "/summarization/summarize",
+                    {"text": text_input},
+                    offline=st.session_state.get("offline_demo", False),
+                    timeout=120,
                 )
-                response.raise_for_status()
-                result = response.json()
+                if not ok:
+                    raise requests.exceptions.RequestException(err)
                 summary = result.get("summary_text", "No summary generated.")
                 
                 st.subheader("📝 Summary")
@@ -397,7 +412,7 @@ def text_summarization_component():
                         })
                         st.success("Saved to favorites!")
                 
-                log_to_history("Text Summarization", text_input[:100], summary)
+                log_to_history("Text Summarization", text_input[:100], summary, latency_ms=latency_ms)
                 
             except requests.exceptions.RequestException as e:
                 display_error(f"Could not summarize text: {e}")
@@ -483,11 +498,41 @@ def image_captioning_component():
     st.header("🖼️ Image Captioning")
     st.write("Generate descriptive captions for your images.")
 
-    uploaded_file = st.file_uploader(
-        "Choose an image...", 
-        type=["jpg", "jpeg", "png", "bmp", "tiff"], 
-        help="Supported formats: JPG, JPEG, PNG, BMP, TIFF"
-    )
+    from toolkit.assets_util import demo_image_bytes
+
+    col_u1, col_u2 = st.columns([3, 1])
+    with col_u1:
+        uploaded_file = st.file_uploader(
+            "Choose an image...",
+            type=["jpg", "jpeg", "png", "bmp", "tiff"],
+            help="Supported formats: JPG, JPEG, PNG, BMP, TIFF",
+        )
+    with col_u2:
+        use_demo = st.button("Use demo image", use_container_width=True)
+    if use_demo:
+        st.session_state.demo_image_bytes = demo_image_bytes()
+        st.session_state.demo_image_name = "demo_workshop.png"
+
+    if st.session_state.get("demo_image_bytes") and uploaded_file is None:
+        st.image(st.session_state.demo_image_bytes, caption="Demo workshop image", use_container_width=True)
+
+    active_file = uploaded_file
+    if active_file is None and st.session_state.get("demo_image_bytes"):
+        class _DemoFile:
+            def __init__(self, name, data):
+                self.name = name
+                self.type = "image/png"
+                self._data = data
+            def getvalue(self):
+                return self._data
+            def read(self):
+                return self._data
+            def seek(self, pos):
+                pass
+        active_file = _DemoFile(st.session_state.get("demo_image_name", "demo.png"), st.session_state.demo_image_bytes)
+
+    if active_file is not None:
+        uploaded_file = active_file
         
     if uploaded_file is not None:
         st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
@@ -827,18 +872,22 @@ def Youtubeing_component(): # Renamed from Youtubeing_component
     """Streamlit component for Question Answering."""
     st.header("❓ Question Answering")
     st.write("Get answers to your questions from provided text or general knowledge.")
-    st.info("This feature currently provides a mock response, demonstrating the API structure. A real QA model would be integrated on the backend.")
+    qa_demo = st.session_state.pop("demo_fill_qa", None)
+    q_default = qa_demo.get("question", "") if isinstance(qa_demo, dict) else ""
+    c_default = qa_demo.get("context", "") if isinstance(qa_demo, dict) else ""
 
     question = st.text_input(
-        "Your Question:", 
-        placeholder="e.g., What is the capital of France?",
-        help="Enter the question you want the AI to answer."
+        "Your Question:",
+        value=q_default,
+        placeholder="e.g., What is the main benefit of self-hosted AI?",
+        help="Enter the question you want the AI to answer.",
     )
     context = st.text_area(
-        "Provide Context (Optional):", 
-        height=150, 
+        "Provide Context (Optional):",
+        value=c_default,
+        height=150,
         placeholder="Paste relevant text here for contextual answers...",
-        help="If you provide context, the AI will try to answer based on it. Otherwise, it will use its general knowledge."
+        help="Extractive QA works best with context supplied.",
     )
 
     if st.button("🧠 Get Answer", type="primary", use_container_width=True):
@@ -899,7 +948,11 @@ def history_component():
     history_df['success'] = history_df['success'].apply(lambda x: '✅ Success' if x else '❌ Failed')
     history_df.index += 1 # Start index from 1 for better readability
 
+    if not history_df.empty and 'latency_ms' in history_df.columns:
+        st.metric("Avg latency (logged)", f"{history_df['latency_ms'].dropna().mean():.0f} ms")
+
     st.dataframe(history_df, use_container_width=True, height=400)
+    st.download_button("Export history CSV", history_df.to_csv().encode(), "api_history.csv")
 
     # Optional: Clear history button
     if st.button("🗑️ Clear History", key="clear_history", type="secondary"):
@@ -957,89 +1010,23 @@ def user_preferences_component():
         st.success("Preferences saved (mock)!")
 
 def system_dashboard_component():
-    """Displays system status and basic analytics."""
-    st.header("🚀 System Dashboard")
-    st.write("Overview of backend status and API usage.")
-
-    # Backend Status
-    st.subheader("Backend AI Model Status")
-    models_loaded, error_message = get_backend_status()
-    if models_loaded:
-        st.markdown(
-            """
-            <div class="success-message">
-                <h4>✅ Backend Models Loaded and Operational!</h4>
-                <p>All AI services are ready to use.</p>
-            </div>
-            """, unsafe_allow_html=True
-        )
-    else:
-        st.markdown(
-            f"""
-            <div class="error-message">
-                <h4>❌ Backend Models Not Loaded or Backend Unreachable!</h4>
-                <p>Please ensure the backend FastAPI application is running at <code>{API_BASE.replace('/api', '')}</code>.</p>
-                <p><strong>Error Details:</strong> {error_message or 'Unknown error. Check backend logs for more details.'}</p>
-            </div>
-            """, unsafe_allow_html=True
-        )
-    
-    st.subheader("API Usage Statistics")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Total API Calls", st.session_state.api_calls_count)
-    with col2:
-        st.metric("Favorites Saved", len(st.session_state.favorites))
-    
-    st.subheader("Usage Over Time (Mock Data)")
-    # Generate some mock data for daily usage if not present
-    if 'daily_usage_data' not in st.session_state:
-        dates = pd.date_range(start="2023-01-01", periods=30, freq="D")
-        st.session_state.daily_usage_data = pd.DataFrame({
-            'Date': dates,
-            'API Calls': np.random.randint(5, 50, size=30)
-        })
-
-    fig = px.line(
-        st.session_state.daily_usage_data, 
-        x='Date', 
-        y='API Calls', 
-        title='Daily API Calls (Mock Data)',
-        labels={'API Calls': 'Number of Calls', 'Date': 'Date'},
-        template="plotly_white"
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.subheader("Model Usage Distribution (Mock Data)")
-    # Generate mock data for model usage distribution
-    if 'model_usage_data' not in st.session_state:
-        st.session_state.model_usage_data = pd.DataFrame({
-            'Model': ['Sentiment', 'Summarization', 'Generation', 'Captioning', 'Translation', 'TTS', 'STT', 'Chatbot', 'QA'],
-            'Usage Count': np.random.randint(10, 100, size=9)
-        })
-    
-    fig_pie = px.pie(
-        st.session_state.model_usage_data, 
-        values='Usage Count', 
-        names='Model', 
-        title='AI Model Usage Distribution (Mock Data)',
-        hole=.3
-    )
-    st.plotly_chart(fig_pie, use_container_width=True)
+    """Enterprise system dashboard with real session analytics."""
+    render_enterprise_dashboard()
 
 
 # --- Main Application Layout ---
 
 # Header Section
-st.markdown("""
+st.markdown(f"""
 <div class="main-header">
-    <h1>AI Services Toolkit Pro 🤖</h1>
-    <p>Empowering your tasks with advanced AI capabilities</p>
+    <h1>{APP_NAME} 🤖</h1>
+    <p>Self-hosted NLP · Speech · Vision · Unified API gateway</p>
 </div>
 """, unsafe_allow_html=True)
 
 # Sidebar Navigation
 st.sidebar.title("🚀 Navigation")
+render_demo_sidebar()
 st.sidebar.markdown('<div class="sidebar-card">Choose an AI service or utility:</div>', unsafe_allow_html=True)
 
 menu_options = {
@@ -1053,11 +1040,15 @@ menu_options = {
     "Speech to Text": "🎤",
     "AI Chatbot": "💬",
     "Question Answering": "❓",
-    "---": "---", # Separator
+    "---": "---",
+    "Demo Runner": "🎬",
+    "Batch Lab": "📦",
+    "API Playground": "🧪",
+    "Session Report": "📑",
     "API Call History": "📜",
     "My Favorites": "⭐",
     "User Preferences": "⚙️",
-    "System Dashboard": "🚀"
+    "System Dashboard": "🚀",
 }
 
 # Add a selectbox for navigation, or use buttons/radio for more direct navigation
@@ -1072,42 +1063,7 @@ selected_option = st.sidebar.radio(
 st.markdown("---")
 
 if selected_option == "Home":
-    st.header("Welcome to the AI Services Toolkit Pro!")
-    st.write("""
-        This application provides a comprehensive suite of AI tools, all powered by a self-hosted FastAPI backend.
-        Explore various capabilities from natural language processing to speech and image analysis.
-    """)
-    st.markdown("---")
-    st.subheader("Key Features:")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown('<div class="feature-card"><h4>Text Analysis</h4><p>Sentiment, Summarization, Generation, Translation</p></div>', unsafe_allow_html=True)
-        st.markdown('<div class="feature-card"><h4>Speech AI</h4><p>Text-to-Speech (TTS) & Speech-to-Text (STT)</p></div>', unsafe_allow_html=True)
-    with col2:
-        st.markdown('<div class="feature-card"><h4>Image Intelligence</h4><p>Automatic Image Captioning</p></div>', unsafe_allow_html=True)
-        st.markdown('<div class="feature-card"><h4>Interactive AI</h4><p>AI Chatbot & Question Answering</p></div>', unsafe_allow_html=True)
-
-    st.markdown("---")
-    st.subheader("Backend Status:")
-    models_loaded_home, error_message_home = get_backend_status()
-    if models_loaded_home:
-        st.markdown('<p class="success-message"><strong>Backend AI Models are loaded and ready!</strong> Start exploring the tools.</p>', unsafe_allow_html=True)
-    else:
-        st.markdown(
-            f'<p class="error-message"><strong>Backend AI Models are NOT loaded or backend is unreachable.</strong> Please ensure your FastAPI server is running. Error: {error_message_home}</p>', 
-            unsafe_allow_html=True
-        )
-
-    st.markdown("---")
-    st.subheader("How to Use:")
-    st.write("""
-    1. **Select a Service** from the sidebar.
-    2. **Input your data** (text, image, or audio) into the designated area.
-    3. **Click the "Analyze" or "Generate" button** to process.
-    4. **View Results** and utilize options like download or save to favorites.
-    """)
-    
-    st.info("💡 **Tip:** Check the 'System Dashboard' for backend health and usage statistics!")
+    render_enterprise_home()
 
 elif selected_option == "Sentiment Analysis":
     sentiment_analysis_component()
@@ -1128,6 +1084,22 @@ elif selected_option == "AI Chatbot":
 elif selected_option == "Question Answering":
     # Renamed the component function for consistency
     Youtubeing_component() 
+elif selected_option == "Demo Runner":
+    render_demo_runner()
+elif selected_option == "Document Analyzer":
+    render_document_analyzer()
+elif selected_option == "Service Compare":
+    render_service_compare()
+elif selected_option == "Batch Lab":
+    render_batch_lab()
+elif selected_option == "API Playground":
+    render_api_playground()
+elif selected_option == "Session Report":
+    render_session_report()
+elif selected_option == "Integrations Hub":
+    render_integrations_hub()
+elif selected_option == "Cost Center":
+    render_cost_center()
 elif selected_option == "API Call History":
     history_component()
 elif selected_option == "My Favorites":
@@ -1140,10 +1112,10 @@ elif selected_option == "System Dashboard":
 # Footer
 st.markdown("---")
 st.markdown(
-    """
+    f"""
     <div style="text-align: center; color: gray;">
-        <p>AI Services Toolkit Pro v1.4.1 | Developed by Aayush Yadav</p>
+        <p>{APP_NAME} | Self-hosted FastAPI + Streamlit</p>
     </div>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )

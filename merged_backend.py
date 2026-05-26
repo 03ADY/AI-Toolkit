@@ -21,7 +21,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 app = FastAPI(
     title="Professional AI Toolkit (Python 3.10+)", # Adjusted Python version for broader compatibility
     description="A suite of high-performance, self-hosted AI models including TTS/STT.",
-    version="1.4.5", # Updated version to reflect real QA model integration
 )
 
 app.add_middleware(
@@ -34,6 +33,7 @@ app.add_middleware(
 
 models = {}
 MODELS_LOADED = False
+REQUEST_COUNT = 0
 
 @app.on_event("startup")
 def load_models():
@@ -122,16 +122,38 @@ def get_status():
     """
     Returns the current loading status of the AI models.
     """
-    return {"models_loaded": MODELS_LOADED}
+    return {"models_loaded": MODELS_LOADED, "service_count": len(models)}
+
+
+@api_router.get("/models")
+def list_loaded_models():
+    """List loaded model pipelines for ops dashboard."""
+    return {
+        "models_loaded": MODELS_LOADED,
+        "models": sorted(models.keys()) if MODELS_LOADED else [],
+    }
+
+
+@api_router.get("/metrics")
+def api_metrics():
+    """Lightweight metrics for demo dashboards."""
+    return {
+        "models_loaded": MODELS_LOADED,
+        "pipelines": len(models),
+        "version": app.version,
+        "requests_served": REQUEST_COUNT,
+    }
 
 @api_router.post("/sentiment/analyze")
 def analyze_sentiment(payload: TextIn):
     """
     Analyzes the sentiment of a given text.
     """
+    global REQUEST_COUNT
     try:
         if not MODELS_LOADED:
             raise HTTPException(status_code=503, detail="Models are not loaded yet. Please wait.")
+        REQUEST_COUNT += 1
         result = models["sentiment"](payload.text)
         return result[0]
     except Exception as e:
@@ -382,6 +404,12 @@ def root():
     Root endpoint for the API.
     """
     return {"message": "Welcome to the Professional AI Toolkit API. Visit /docs for details."}
+
+
+@app.get("/health")
+def health():
+    """Liveness/readiness for orchestrators and demo dashboards."""
+    return {"status": "ok" if MODELS_LOADED else "loading", "models_loaded": MODELS_LOADED}
 
 if __name__ == "__main__":
     print("Starting Professional AI Toolkit Backend Server...")
