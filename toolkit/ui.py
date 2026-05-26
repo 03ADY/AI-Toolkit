@@ -38,6 +38,7 @@ def render_demo_sidebar() -> dict:
     st.markdown("### 🎬 Demo")
     present = st.toggle("Present mode", value=st.session_state.get("present_mode", True))
     st.session_state.present_mode = present
+    api = API_BASE
 
     if use_builtin_runtime():
         st.session_state.builtin_mode = True
