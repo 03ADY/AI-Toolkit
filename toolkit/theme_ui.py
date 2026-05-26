@@ -23,7 +23,22 @@ html, body, [class*="css"] { font-family: 'Inter', system-ui, sans-serif !import
 div[data-testid="stMetric"] {
   background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(148, 163, 184, 0.15); border-radius: 12px;
 }
-div[data-testid="stSidebar"] { background: linear-gradient(180deg, #0f172a 0%, #312e81 100%) !important; }
+section[data-testid="stSidebar"], div[data-testid="stSidebar"], [data-testid="stSidebarContent"],
+[data-testid="stSidebarUserContent"], [data-testid="stSidebarNav"] {
+  background-color: #0f172a !important;
+  background-image: linear-gradient(180deg, #0f172a 0%, #312e81 100%) !important;
+  color: #f1f5f9 !important;
+}
+[data-testid="stSidebar"] p, [data-testid="stSidebar"] label, [data-testid="stSidebar"] span,
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p, [data-testid="stSidebar"] .stCaption,
+[data-testid="stSidebarNav"] a, [data-testid="stSidebarNav"] span { color: #e2e8f0 !important; }
+[data-testid="stSidebar"] input, [data-testid="stSidebar"] [data-baseweb="select"] > div {
+  background-color: #1e293b !important; color: #f8fafc !important;
+}
+[data-testid="stSidebar"] .stButton > button {
+  background: linear-gradient(135deg, ACCENT_A, ACCENT_B) !important; color: #fff !important;
+}
+[data-testid="stSidebar"] .stRadio label, [data-testid="stSidebar"] .stRadio label p { color: #e2e8f0 !important; }
 .stTabs [data-baseweb="tab"] { border-radius: 10px; background: rgba(30,41,59,0.6); color: #e2e8f0; }
 .stTabs [aria-selected="true"] {
   background: linear-gradient(135deg, ACCENT_A, ACCENT_B) !important; color: #fff !important;
